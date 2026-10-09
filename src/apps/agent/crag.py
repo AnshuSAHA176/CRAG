@@ -40,6 +40,18 @@ class RewriteQuery(BaseModel):
     )
 
 
+def is_greeting(state: RAGState):
+    q = state["question"].lower().strip()
+    if q in ["hi", "hello", "hey", "greetings"]:
+        return "greeting"
+    return "rag"
+
+def greeting_node(state: RAGState):
+    return {
+        "answer": "Hello! I am your CRAG assistant. How can I help you with your documents today?",
+        "context": ""
+    }
+
 def retrieve_chunks(state: RAGState):
     question = (
         state.get("rewritten_question")
@@ -189,6 +201,7 @@ Retrieved context:
 def get_agent():
     graphbuilder = StateGraph(RAGState)
 
+    graphbuilder.add_node("greeting_node", greeting_node)
     graphbuilder.add_node("retrieve_chunks", retrieve_chunks)
     graphbuilder.add_node(
         "evaluate_relevance",
@@ -197,7 +210,17 @@ def get_agent():
     graphbuilder.add_node("retry_node", retry_node)
     graphbuilder.add_node("generator", generator)
 
-    graphbuilder.add_edge(START, "retrieve_chunks")
+    graphbuilder.add_conditional_edges(
+        START,
+        is_greeting,
+        {
+            "greeting": "greeting_node",
+            "rag": "retrieve_chunks"
+        }
+    )
+
+    graphbuilder.add_edge("greeting_node", END)
+
     graphbuilder.add_edge(
         "retrieve_chunks",
         "evaluate_relevance",

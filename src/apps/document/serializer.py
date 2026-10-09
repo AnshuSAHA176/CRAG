@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Document
-from .tasks import document_process
+
 
 class DocumentSerializer(serializers.ModelSerializer):
     email = serializers.CharField(source="user.email", read_only=True)
@@ -33,6 +33,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        from .tasks import document_process
         file = validated_data["file"]
         validated_data["file_size"] = file.size
         validated_data["mime_type"] = file.content_type

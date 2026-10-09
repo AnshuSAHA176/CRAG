@@ -3,11 +3,12 @@
 import pymupdf
 import numpy as np
 
-from nltk.tokenize import sent_tokenize
+
 from .embedding import generate_embedding
 
 
 def chunking(document_name, max_sentences=8):
+    from nltk.tokenize import sent_tokenize
     sentences = []
 
     with pymupdf.open(document_name) as doc:

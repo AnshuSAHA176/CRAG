@@ -1,87 +1,8 @@
-import os
-
-base_dir = "/Users/anshusaha/Documents/CRAG/frontend/src"
-
-files = {
-    "api/chat.ts": """
-import { API_URL } from './client';
-
-export const streamChat = async (
-  message: string,
-  onToken: (token: string) => void,
-  onComplete: () => void,
-  onError: (error: string) => void
-) => {
-  try {
-    const token = localStorage.getItem('access_token');
-    const response = await fetch(`${API_URL}/agent/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ message })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-
-    if (!reader) throw new Error('No reader available');
-
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\\n\\n');
-      
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('event: token')) {
-          const dataMatch = line.match(/data: (.*)/);
-          if (dataMatch && dataMatch[1]) {
-            try {
-              const data = JSON.parse(dataMatch[1]);
-              if (data.content) onToken(data.content);
-            } catch (e) {
-              console.error('Failed to parse token data', e);
-            }
-          }
-        } else if (line.startsWith('event: done')) {
-          onComplete();
-          return;
-        } else if (line.startsWith('event: error')) {
-          const dataMatch = line.match(/data: (.*)/);
-          if (dataMatch && dataMatch[1]) {
-            try {
-              const data = JSON.parse(dataMatch[1]);
-              onError(data.message || 'Stream error');
-            } catch (e) {
-              onError('Stream error');
-            }
-          }
-          return;
-        }
-      }
-    }
-  } catch (error: any) {
-    onError(error.message || 'Unknown error occurred');
-  }
-};
-""",
-    "pages/WorkspacePage.tsx": """
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../store/AuthContext';
-import { documentApi, Document } from '../api/documents';
+import { documentApi, type Document } from '../api/documents';
 import { streamChat } from '../api/chat';
-import { LogOut, Upload, FileText, Trash2, Send, Database, MessageSquare, Loader2, AlertCircle } from 'lucide-react';
+import { LogOut, Upload, FileText, Trash2, Send, Database, MessageSquare, Loader2, AlertCircle, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '../lib/utils';
@@ -117,14 +38,20 @@ const WorkspacePage: React.FC = () => {
     }
   };
 
+  // Initial fetch on mount
   useEffect(() => {
     fetchDocuments();
-    // Poll for document status
+  }, []);
+
+  // Poll for document status
+  useEffect(() => {
+    const needsPolling = documents.some(d => d.status === 'PENDING' || d.status === 'PROCESSING');
+    if (!needsPolling) return;
+
     const interval = setInterval(() => {
-      if (documents.some(d => d.status === 'PENDING' || d.status === 'PROCESSING')) {
-        fetchDocuments();
-      }
+      fetchDocuments();
     }, 5000);
+
     return () => clearInterval(interval);
   }, [documents]);
 
@@ -184,7 +111,7 @@ const WorkspacePage: React.FC = () => {
       },
       (error) => {
         setMessages(prev => prev.map(msg => 
-          msg.id === assistantMsgId ? { ...msg, content: msg.content + `\\n\\n*[Error: ${error}]*` } : msg
+          msg.id === assistantMsgId ? { ...msg, content: msg.content + `\n\n*[Error: ${error}]*` } : msg
         ));
         setIsTyping(false);
       }
@@ -406,13 +333,3 @@ const WorkspacePage: React.FC = () => {
 };
 
 export default WorkspacePage;
-"""
-}
-
-for path, content in files.items():
-    full_path = os.path.join(base_dir, path)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-    with open(full_path, "w") as f:
-        f.write(content.strip())
-        
-print("Generated workspace and api.")

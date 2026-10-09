@@ -1,7 +1,7 @@
 from django.urls import path
-from .views import RagView
+from .views import AgentView
 
 
 urlpatterns =[
-    path('',RagView.as_view(),name='rag')
+    path('',AgentView.as_view(),name='rag')
 ]
