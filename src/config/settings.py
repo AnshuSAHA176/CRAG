@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-c)hpqr^!126v12dgm9%zmzpo07=n6cgttb2kuf2sz$d!3q)f-i
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'apps.accounts',
      "rest_framework",
      'apps.document',
+     'apps.agent',
+
 ]
 
 MIDDLEWARE = [
@@ -147,3 +149,16 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET"),
     secure=True,
 )
+
+CELERY_BROKER_URL = "redis://127.0.0.1:6378/1"
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6378/1"
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6378",
+    }
+}
+
+TIME_ZONE = "Asia/Kolkata"
+USE_TZ = True
