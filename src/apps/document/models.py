@@ -30,7 +30,7 @@ class Document(models.Model):
             models.Index(fields=['uploaded']),
         ]
     def __str__(self):
-        return f'Title :- {self.title}'
+        return f'Title :- {self.title}/User:- {self.user.id}'
 
 
 from django.db import models
