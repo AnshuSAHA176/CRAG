@@ -344,6 +344,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pymupdf" },
     { name = "redis" },
+    { name = "sib-api-v3-sdk" },
 ]
 
 [package.metadata]
@@ -363,6 +364,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pymupdf", specifier = ">=1.28.2" },
     { name = "redis", specifier = "==5.3.1" },
+    { name = "sib-api-v3-sdk", specifier = ">=7.6.0" },
 ]
 
 [[package]]
@@ -1550,6 +1552,18 @@ sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
 ]
+
+[[package]]
+name = "sib-api-v3-sdk"
+version = "7.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "python-dateutil" },
+    { name = "six" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/23/e6/44b6ca7c63cc72e5baf0b9a570e115913fb96e9f97201c2195b8bf4f5d71/sib-api-v3-sdk-7.6.0.tar.gz", hash = "sha256:8975108c4a66ca2280532017190150f98ac826eacdda6c2f859ff104d2828266", size = 265002, upload-time = "2023-03-20T06:21:08.403Z" }
 
 [[package]]
 name = "six"
