@@ -8,6 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from langgraph.types import Command
+
 from .crag import get_agent
 
 logger = logging.getLogger(__name__)
@@ -17,31 +19,57 @@ class AgentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        question = request.data.get("message")
-
-        if not isinstance(question, str) or not question.strip():
-            return Response(
-                {"error": "A non-empty message is required."},
-                status=400,
-            )
-
-        question = question.strip()
         user_id = str(request.user.pk)
         agent = get_agent()
 
-        # Match the fields required by your RAGState.
-        initial_state = {
-            "question": question,
-            "user_id": user_id,
-            "chunks": [],
-            "context": "",
-            "answer": "",
-            "retrieval_good": False,
-            "grounded": False,
-            "retry_count": 0,
-            "relevance_score": 0.0,
-            "relevance_reason": "",
-            "rewritten_question": "",
+        resume_data = request.data.get("resume")
+
+        if resume_data is not None:
+            if not isinstance(resume_data, dict):
+                return Response(
+                    {"error": "Resume must be an object."},
+                    status=400,
+                )
+
+            if type(resume_data.get("approved")) is not bool:
+                return Response(
+                    {"error": "approved must be true or false."},
+                    status=400,
+                )
+
+            graph_input = Command(resume=resume_data)
+
+        else:
+            question = request.data.get("message")
+
+            if not isinstance(question, str) or not question.strip():
+                return Response(
+                    {"error": "A non-empty message is required."},
+                    status=400,
+                )
+
+            question = question.strip()
+
+            initial_state = {
+                "question": question,
+                "user_id": user_id,
+                "chunks": [],
+                "context": "",
+                "answer": "",
+                "retrieval_good": False,
+                "grounded": False,
+                "retry_count": 0,
+                "relevance_score": 0.0,
+                "relevance_reason": "",
+                "rewritten_question": "",
+            }
+
+            graph_input = initial_state
+
+        config = {
+            "configurable": {
+                "thread_id": user_id,
+            }
         }
 
         def event_stream():
@@ -50,22 +78,33 @@ class AgentView(APIView):
 
             async def stream_events():
                 async for event in agent.astream_events(
-                    initial_state,
-                    config={
-                        "configurable": {
-                            "thread_id": user_id,
-                        }
-                    },
+                    graph_input,
+                    config=config,
                     version="v2",
                 ):
+                    # Detect graph interrupts and send approval details.
                     if event["event"] == "on_chain_end":
                         output = event["data"].get("output")
-                        if isinstance(output, dict) and "answer" in output and event["name"] in ["generator", "greeting_node", "LangGraph"]:
-                            # Only emit once we have the final answer. We check the node names to be safe.
-                            if event["name"] in ["generator", "greeting_node"]:
+
+                        if isinstance(output, dict):
+                            interrupts = output.get("__interrupt__")
+
+                            if interrupts:
+                                for item in interrupts:
+                                    yield {
+                                        "event": "approval_required",
+                                        "thread_id": user_id,
+                                        "approval": item.value,
+                                    }
+                                return
+
+                            if "answer" in output and event["name"] in [
+                                "generator",
+                                "greeting_node",
+                            ]:
                                 yield {
                                     "event": "final_answer",
-                                    "answer": output["answer"]
+                                    "answer": output["answer"],
                                 }
 
             iterator = stream_events()
@@ -80,10 +119,8 @@ class AgentView(APIView):
                         break
 
                     yield (
-                        "event: final_answer\n"
-                        "data: "
-                        + json.dumps(event_data, default=str)
-                        + "\n\n"
+                        f"event: {event_data['event']}\n"
+                        f"data: {json.dumps(event_data, default=str)}\n\n"
                     )
 
                 yield "data: [DONE]\n\n"
@@ -91,7 +128,7 @@ class AgentView(APIView):
             except GeneratorExit:
                 raise
 
-            except Exception as e:
+            except Exception:
                 logger.exception(
                     "LangGraph streaming failed for user_id=%s",
                     user_id,
@@ -100,7 +137,7 @@ class AgentView(APIView):
                     "event: error\n"
                     "data: "
                     + json.dumps({
-                        "error": "The agent failed to process your question."
+                        "error": "The agent failed to process your request."
                     })
                     + "\n\n"
                 )
@@ -123,32 +160,3 @@ class AgentView(APIView):
         response["X-Accel-Buffering"] = "no"
 
         return response
-
-
-
-
-    @staticmethod
-    async def iterate_events(agent, question):
-        async for event in agent.astream_events(
-            {
-                "messages": [
-                    {"role": "user", "content": question}
-                ]
-            },
-            version="v2",
-        ):
-            yield event
-
-    @staticmethod
-    def format_event(event):
-        return (
-            "data: "
-            + json.dumps(event, default=str)
-            + "\n\n"
-        )
-
-    @staticmethod
-    def error_response(message, status=400):
-        from rest_framework.response import Response
-
-        return Response({"error": message}, status=status)

@@ -14,7 +14,7 @@ class User(AbstractBaseUser,PermissionsMixin):
         editable=False
     )
     email = models.EmailField(unique= True)
-
+    name = models.CharField(max_length=400,null=True,blank=True)
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
