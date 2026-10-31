@@ -8,9 +8,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from .crag import get_agent
+from .agent import get_agent
+from .serializer import DeterministicGuardRail
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,29 +45,13 @@ class AgentView(APIView):
         else:
             question = request.data.get("message")
 
-            if not isinstance(question, str) or not question.strip():
-                return Response(
-                    {"error": "A non-empty message is required."},
-                    status=400,
-                )
+            serializer = DeterministicGuardRail(data=question)
+            serializer.is_valid(raise_exception=True)
 
-            question = question.strip()
-
-            initial_state = {
-                "question": question,
+            graph_input = {
+                "messages": [HumanMessage(content=serializer.data)],
                 "user_id": user_id,
-                "chunks": [],
-                "context": "",
-                "answer": "",
-                "retrieval_good": False,
-                "grounded": False,
-                "retry_count": 0,
-                "relevance_score": 0.0,
-                "relevance_reason": "",
-                "rewritten_question": "",
             }
-
-            graph_input = initial_state
 
         config = {
             "configurable": {
@@ -75,41 +62,54 @@ class AgentView(APIView):
         def event_stream():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            iterator = None
 
             async def stream_events():
-                async for event in agent.astream_events(
+                async for chunk in agent.astream(
                     graph_input,
                     config=config,
-                    version="v2",
+                    stream_mode="updates",
                 ):
-                    # Detect graph interrupts and send approval details.
-                    if event["event"] == "on_chain_end":
-                        output = event["data"].get("output")
+                    # Human-in-the-loop approval interrupt
+                    interrupts = chunk.get("__interrupt__")
 
-                        if isinstance(output, dict):
-                            interrupts = output.get("__interrupt__")
+                    if interrupts:
+                        for item in interrupts:
+                            yield {
+                                "event": "approval_required",
+                                "thread_id": user_id,
+                                "approval": item.value,
+                            }
+                        return
 
-                            if interrupts:
-                                for item in interrupts:
-                                    yield {
-                                        "event": "approval_required",
-                                        "thread_id": user_id,
-                                        "approval": item.value,
-                                    }
-                                return
+                    # The general agent's chat node
+                    chat_update = chunk.get("chat")
 
-                            if "answer" in output and event["name"] in [
-                                "generator",
-                                "greeting_node",
-                            ]:
-                                yield {
-                                    "event": "final_answer",
-                                    "answer": output["answer"],
-                                }
+                    if not isinstance(chat_update, dict):
+                        continue
 
-            iterator = stream_events()
+                    messages = chat_update.get("messages", [])
+
+                    if not messages:
+                        continue
+
+                    message = messages[-1]
+
+                    # A tool call is not a user-facing final answer.
+                    if getattr(message, "tool_calls", []):
+                        continue
+
+                    content = getattr(message, "content", "")
+
+                    if isinstance(content, str) and content.strip():
+                        yield {
+                            "event": "final_answer",
+                            "answer": content,
+                        }
 
             try:
+                iterator = stream_events()
+
                 while True:
                     try:
                         event_data = loop.run_until_complete(
@@ -135,19 +135,20 @@ class AgentView(APIView):
                 )
                 yield (
                     "event: error\n"
-                    "data: "
-                    + json.dumps({
-                        "error": "The agent failed to process your request."
-                    })
-                    + "\n\n"
+                    f"data: {json.dumps({'error': 'The agent failed to process your request.'})}\n\n"
                 )
 
             finally:
+                if iterator is not None:
+                    try:
+                        loop.run_until_complete(iterator.aclose())
+                    except Exception:
+                        logger.exception("Error closing agent event stream")
+
                 try:
-                    loop.run_until_complete(iterator.aclose())
                     loop.run_until_complete(loop.shutdown_asyncgens())
                 except Exception:
-                    logger.exception("Error closing LangGraph stream")
+                    logger.exception("Error shutting down async generators")
                 finally:
                     asyncio.set_event_loop(None)
                     loop.close()

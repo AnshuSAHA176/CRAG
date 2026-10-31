@@ -5,7 +5,7 @@ from django.conf import settings
 
 def send_email(to_email: str, name: str, subject: str, html_content)->dict:
     configaration = sib_api_v3_sdk.Configuration()
-    configaration.api_key["api-key"] = settings.BRAVO_API_KEY
+    configaration.api_key["api-key"] = settings.BREVO_API_KEY
     api_clint = sib_api_v3_sdk.ApiClient(configaration)
     api = sib_api_v3_sdk.TransactionalEmailsApi(api_clint)
 
